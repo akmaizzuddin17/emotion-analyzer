@@ -1,0 +1,42 @@
+[
+  {
+    "model": "Naive Bayes",
+    "feature": "TF-IDF",
+    "accuracy": 0.792,
+    "precision": 0.8263,
+    "recall": 0.792,
+    "f1": 0.7639
+  },
+  {
+    "model": "Logistic Reg",
+    "feature": "TF-IDF",
+    "accuracy": 0.899,
+    "precision": 0.9064,
+    "recall": 0.899,
+    "f1": 0.901
+  },
+  {
+    "model": "Linear SVM",
+    "feature": "TF-IDF",
+    "accuracy": 0.9015,
+    "precision": 0.9047,
+    "recall": 0.9015,
+    "f1": 0.9026
+  },
+  {
+    "model": "Logistic Reg",
+    "feature": "Word2Vec",
+    "accuracy": 0.426,
+    "precision": 0.5114,
+    "recall": 0.426,
+    "f1": 0.4477
+  },
+  {
+    "model": "Linear SVM",
+    "feature": "Word2Vec",
+    "accuracy": 0.486,
+    "precision": 0.493,
+    "recall": 0.486,
+    "f1": 0.4847
+  }
+]
