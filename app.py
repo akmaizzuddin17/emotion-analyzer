@@ -493,10 +493,10 @@ def page_home(active, app_m):
     st.markdown('<div class="st-lab home-team-lab">Team</div>', unsafe_allow_html=True)
     st.markdown(
         '<p class="team-line">'
-        '<b>Member 1</b> · Data &amp; preprocessing&nbsp;&nbsp;•&nbsp;&nbsp;'
-        '<b>Member 2</b> · Modelling &amp; evaluation&nbsp;&nbsp;•&nbsp;&nbsp;'
-        '<b>Member 3</b> · Streamlit app &amp; UI&nbsp;&nbsp;•&nbsp;&nbsp;'
-        '<b>Member 4</b> · Report &amp; visualizations'
+        '<b>Adam</b> · Data &amp; preprocessing&nbsp;&nbsp;•&nbsp;&nbsp;'
+        '<b>Harraz</b> · Modelling &amp; evaluation&nbsp;&nbsp;•&nbsp;&nbsp;'
+        '<b>Akma</b> · Streamlit app &amp; UI&nbsp;&nbsp;•&nbsp;&nbsp;'
+        '<b>Aryl</b> · Report &amp; visualizations'
         '</p>',
         unsafe_allow_html=True,
     )
