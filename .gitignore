@@ -14,6 +14,9 @@ Thumbs.db
 # Streamlit
 .streamlit/secrets.toml
 
+# Reports (kept locally, excluded from the GitHub repo)
+reports/
+
 # Large model artifacts are kept (needed by the app), but ignore these if you
 # prefer to regenerate them with train_models.py:
 # models/*.pkl
