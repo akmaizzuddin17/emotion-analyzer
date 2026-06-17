@@ -1,20 +1,27 @@
 """
-app.py — Social Media Emotion Analyzer
-======================================
-An interactive NLP web application (SAIA 2163, Theme 5).
+app.py — Social Media Emotion Analyzer  (SAIA 2163 · Theme 5)
+============================================================
+An interactive NLP web application built with Streamlit.
 
-The app loads the pre-trained Logistic Regression + TF-IDF model and lets a
-user type any social-media-style message to instantly detect the emotion
-behind it. The interface follows an editorial "paper" identity: warm light
-canvas, Jost + Palatino type, hand-drawn emotion faces, and a page colour
-that shifts to match whatever emotion the model reads.
+This version follows the multi-page "editorial paper" design (ported from the
+Lovable UI): a sticky TOP NAVIGATION lets the user jump between focused pages
+instead of one long scroll, and detecting an emotion smoothly re-themes the
+whole page to that emotion's colour.
+
+Pages (mapped to the SAIA 2163 brief's required sections):
+  • Home / About      — project, problem, how-to-use, team, tech stack
+  • Analyze           — text input → prediction, confidence, influential words
+  • Data Insights     — sample data, distribution, message length, word clouds, top words
+  • Model Performance — metrics, model comparison, confusion matrix
+  • Malay (BM)        — multi-language support: translate Malay → English → classify
 
 Run:  streamlit run app.py
 """
 
 import os
-import json
 import io
+import json
+import base64
 
 import numpy as np
 import pandas as pd
@@ -24,7 +31,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from wordcloud import WordCloud
 
-from preprocess import clean_text, LABEL_MAP, EMOTION_META
+from preprocess import clean_text, LABEL_MAP
 
 # --------------------------------------------------------------------------- #
 # Page config                                                                 #
@@ -39,12 +46,29 @@ st.set_page_config(
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODELS = os.path.join(HERE, "models")
 DATA = os.path.join(HERE, "data")
-EMOTIONS = [LABEL_MAP[i] for i in range(6)]
+ASSETS = os.path.join(HERE, "assets")
 ORDER = ["joy", "sadness", "love", "anger", "fear", "surprise"]
+LABEL_MAP_INV = {v: k for k, v in LABEL_MAP.items()}
+
+
+def img_uri(filename: str):
+    """Return a base64 data URI for an image in assets/, or None if it's missing.
+
+    Lets us embed local images directly in custom HTML (Streamlit can't serve
+    local file paths inside st.markdown). Images are optional — if the file
+    isn't there, the UI simply skips it, so nothing ever breaks.
+    """
+    path = os.path.join(ASSETS, filename)
+    if not os.path.exists(path):
+        return None
+    ext = os.path.splitext(filename)[1].lstrip(".").lower()
+    mime = "jpeg" if ext in ("jpg", "jpeg") else ext
+    with open(path, "rb") as f:
+        return "data:image/%s;base64,%s" % (mime, base64.b64encode(f.read()).decode())
 
 # --------------------------------------------------------------------------- #
-# Editorial palette — ported from the approved web-UI requirement.            #
-# Each emotion carries a soft page "tint", an "accent", and a "deep" ink.     #
+# Editorial palette — unchanged from the approved UI. Each emotion carries a   #
+# soft page "tint", an "accent", and a "deep" ink.                            #
 # --------------------------------------------------------------------------- #
 NEUTRAL = {"tint": "#FBFAF7", "accent": "#6f6c66", "deep": "#2b2b2b", "label": "Feeling"}
 THEME = {
@@ -55,6 +79,9 @@ THEME = {
     "fear":     {"tint": "#E1F5EE", "accent": "#168A66", "deep": "#0B4F3D", "label": "Fear"},
     "surprise": {"tint": "#EEEDFE", "accent": "#6A5FC9", "deep": "#3C3489", "label": "Surprise"},
 }
+
+# Pages shown in the top navigation.
+PAGES = ["Home", "Analyze", "Data Insights", "Model Performance", "Malay (BM)"]
 
 
 def face(emotion: str, color: str) -> str:
@@ -105,20 +132,20 @@ def face(emotion: str, color: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Custom CSS — the editorial "paper" identity, themed to the active emotion.  #
+# Custom CSS — the editorial "paper" identity, themed to the active emotion.   #
 # --------------------------------------------------------------------------- #
 def inject_css(active="neutral"):
     t = NEUTRAL if active == "neutral" else THEME[active]
     st.markdown(
         """
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&display=swap');
 
         :root{
           --paper:#FBFAF7; --ink:#2b2b2b; --soft:#6f6c66; --line:rgba(0,0,0,.10);
           --accent:%(accent)s; --tint:%(tint)s; --deep:%(deep)s;
-          --body:'Futura','Futura PT','Century Gothic','Jost',-apple-system,sans-serif;
+          --body:'DM Sans',-apple-system,'Segoe UI',sans-serif;
         }
 
         /* kill default streamlit chrome */
@@ -128,17 +155,33 @@ def inject_css(active="neutral"):
           color:var(--ink);
           transition:background .8s ease;
         }
-        .block-container{padding-top:2.4rem; padding-bottom:4rem; max-width:760px;}
+        .block-container{padding-top:1.4rem; padding-bottom:4rem; max-width:780px;}
         html, body, [class*="css"]{font-family:var(--body);}
 
-        .es{font-family:'Playfair Display','Palatino Linotype','Book Antiqua',Palatino,Georgia,serif;}
+        .es{font-family:'Fraunces','Palatino Linotype','Book Antiqua',Palatino,Georgia,serif;}
+
+        /* ---------- top navigation ---------- */
+        .nav-brand{display:flex;align-items:baseline;gap:9px;margin:0 0 2px;}
+        .nav-brand .nm{font-family:'Fraunces',Georgia,serif;font-style:italic;font-size:20px;color:var(--ink);}
+        .nav-brand .bd{font-size:11px;letter-spacing:.26em;text-transform:uppercase;color:var(--accent);font-weight:500;transition:color .8s;}
+        .nav-rule{height:1px;background:var(--line);margin:8px 0 18px;}
+
+        /* the radio that acts as the nav bar */
+        div[role="radiogroup"]{flex-direction:row!important;gap:26px!important;flex-wrap:wrap;}
+        div[role="radiogroup"] label{margin:0!important;}
+        div[role="radiogroup"] label>div:first-child{display:none!important;}  /* hide the dot */
+        div[role="radiogroup"] label p{
+          font-family:var(--body)!important;font-size:14px!important;color:var(--soft)!important;
+          font-weight:500!important;letter-spacing:.01em;padding-bottom:3px;border-bottom:2px solid transparent;
+          transition:color .25s ease,border-color .25s ease;}
+        div[role="radiogroup"] label:hover p{color:var(--ink)!important;}
 
         /* ---------- hero ---------- */
         .eb{font-size:12px;letter-spacing:.32em;text-transform:uppercase;color:var(--accent);
           font-weight:500;transition:color .8s;}
         .eh{font-size:44px;line-height:1.06;margin:12px 0 0;font-weight:500;letter-spacing:-.01em;color:var(--ink);}
         .eh .em{font-style:italic;color:var(--accent);transition:color .8s;}
-        .el{color:var(--soft);font-size:15.5px;line-height:1.6;max-width:560px;margin:16px 0 0;font-weight:300;}
+        .el{color:var(--soft);font-size:15.5px;line-height:1.6;max-width:600px;margin:16px 0 0;font-weight:300;}
 
         /* ---------- result block ---------- */
         .verdict{display:flex;align-items:center;gap:22px;margin:8px 0 4px;}
@@ -157,9 +200,16 @@ def inject_css(active="neutral"):
         .fl{height:100%%;border-radius:100px;}
         .pt{width:42px;text-align:right;font-size:12.5px;color:var(--soft);font-variant-numeric:tabular-nums;}
 
+        /* ---------- influential words ---------- */
+        .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;}
+        .chip{font-size:13px;padding:5px 12px;border-radius:100px;border:1px solid var(--line);
+          background:var(--paper);color:var(--deep);transition:color .8s;}
+        .chip b{color:var(--accent);font-weight:600;transition:color .8s;}
+
         /* ---------- section labels ---------- */
         .st-lab{font-size:12.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--soft);
-          font-weight:500;margin:34px 0 6px;}
+          font-weight:500;margin:30px 0 6px;}
+        .home-team-lab{margin-top:10px;}
         .st-sub{color:var(--soft);font-size:14.5px;font-weight:300;margin-bottom:10px;line-height:1.55;}
 
         /* ---------- six-emotion legend ---------- */
@@ -173,6 +223,41 @@ def inject_css(active="neutral"):
         .fct{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px 10px;text-align:center;}
         .fct .v{font-size:26px;color:var(--deep);font-weight:500;transition:color .8s;}
         .fct .k{font-size:11.5px;color:var(--soft);margin-top:3px;}
+
+        /* ---------- prose / about ---------- */
+        .prose{color:var(--ink);font-size:15px;line-height:1.7;font-weight:300;}
+        .prose b{font-weight:500;}
+        .team-line{color:var(--soft);font-size:13.5px;line-height:1.7;margin-top:4px;}
+        .team-line b{color:var(--ink);font-weight:600;}
+
+        /* ---------- home hero: title overlaid on the watercolor banner ---------- */
+        .home-hero{border-radius:18px;margin:0 0 16px;padding:26px 30px;
+          border:1px solid var(--line);background:var(--paper);}
+        .home-hero.has-bg{
+          background-size:cover;background-position:center;
+          box-shadow:0 10px 34px rgba(0,0,0,.10);border:none;}
+        /* translucent paper scrim so the dark text stays readable on the colours */
+        .home-hero.has-bg .home-hero-in{
+          background:rgba(251,250,247,.74);
+          border-radius:12px;padding:18px 20px;backdrop-filter:blur(2px);}
+        .home-hero .eb{margin-bottom:6px;}
+        .home-hero .eh{font-size:34px;margin:0;}
+        .home-hero .el{margin-top:10px;font-size:14px;line-height:1.55;}
+
+        /* compact one-line "how to use" */
+        .howto{color:var(--soft);font-size:13px;line-height:1.7;margin:14px 0 6px;}
+        .howto b{color:var(--ink);font-weight:600;}
+
+        /* emotion faces decorative strip (transparent line-art) */
+        .faces-strip{display:block;width:100%%;max-width:560px;height:auto;
+          margin:6px auto 8px;opacity:.9;mix-blend-mode:multiply;}
+        /* ---------- optional social icons in footer ---------- */
+        .socials{display:flex;align-items:center;gap:12px;}
+        .socials img{width:20px;height:20px;opacity:.55;transition:opacity .2s;
+          border-radius:5px;filter:grayscale(20%%);}
+        .socials img:hover{opacity:1;}
+        /* ---------- optional speech-bubble art (assets/speech.png) ---------- */
+        .speech-img{display:block;width:96px;height:auto;margin:0 0 6px;opacity:.85;}
 
         /* ---------- streamlit inputs, themed ---------- */
         .stTextArea textarea{
@@ -192,10 +277,17 @@ def inject_css(active="neutral"):
         .stSelectbox div[data-baseweb="select"]>div>div{color:var(--ink)!important;}
         [data-baseweb="select"] span{color:var(--ink)!important;}
 
-        /* tabs */
+        /* sub-tabs */
         .stTabs [data-baseweb="tab-list"]{gap:8px;border-bottom:1px solid var(--line);}
         .stTabs [data-baseweb="tab"]{font-family:var(--body);font-weight:500;color:var(--soft);background:transparent;}
         .stTabs [aria-selected="true"]{color:var(--ink)!important;}
+
+        .stDataFrame{border:1px solid var(--line)!important;border-radius:10px!important;}
+
+        /* metrics (Messages / Emotions / Avg words) — force dark, readable text */
+        [data-testid="stMetricValue"]{color:var(--ink)!important;font-weight:600!important;}
+        [data-testid="stMetricLabel"]{color:var(--soft)!important;}
+        [data-testid="stMetricLabel"] p{color:var(--soft)!important;}
 
         .foot{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);
           font-size:12px;color:var(--soft);letter-spacing:.04em;
@@ -235,7 +327,7 @@ def load_dataset():
 
 
 # --------------------------------------------------------------------------- #
-# Prediction                                                                  #
+# Prediction + explainability                                                 #
 # --------------------------------------------------------------------------- #
 def predict(text, model, tfidf):
     cleaned = clean_text(text)
@@ -243,27 +335,200 @@ def predict(text, model, tfidf):
     probs = model.predict_proba(X)[0]
     order = [LABEL_MAP[i] for i in model.classes_]
     pairs = sorted(zip(order, probs), key=lambda x: -x[1])
-    return pairs, cleaned
+    return pairs, cleaned, X
+
+
+def influential_words(top_emotion, model, tfidf, X, k=6):
+    """Words in the input that pushed the model toward the predicted emotion.
+
+    For Logistic Regression, a feature's contribution to a class is
+    (tf-idf value) × (class coefficient). We surface the top positive ones.
+    """
+    try:
+        class_idx = list(model.classes_).index(LABEL_MAP_INV[top_emotion])
+        coefs = model.coef_[class_idx]
+        feats = tfidf.get_feature_names_out()
+        x = X.toarray()[0]
+        nz = np.nonzero(x)[0]
+        contrib = [(feats[i], x[i] * coefs[i]) for i in nz]
+        contrib = [c for c in contrib if c[1] > 0]
+        contrib.sort(key=lambda c: -c[1])
+        return contrib[:k]
+    except Exception:
+        return []
+
+
+def _light_layout(fig, height):
+    fig.update_layout(
+        height=height,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#1a1a1a", family="DM Sans, sans-serif", size=12),
+        xaxis=dict(tickfont=dict(color="#1a1a1a", size=11)),
+        yaxis=dict(tickfont=dict(color="#1a1a1a", size=11)),
+        margin=dict(t=20, b=10),
+    )
+    return fig
 
 
 # --------------------------------------------------------------------------- #
-# UI sections                                                                 #
+# Shared UI pieces                                                            #
 # --------------------------------------------------------------------------- #
-def hero(active):
-    word = NEUTRAL["label"].lower() if active == "neutral" else THEME[active]["label"].lower()
+def top_nav(active):
+    """Top navigation built from a horizontal radio styled as nav links."""
+    st.markdown(
+        '<div class="nav-brand"><span class="nm">Emotion Analyzer</span>'
+        '<span class="bd">SAIA 2163</span></div>',
+        unsafe_allow_html=True,
+    )
+    current = st.session_state.get("page", "Home")
+    idx = PAGES.index(current) if current in PAGES else 0
+    choice = st.radio(
+        "nav", PAGES, index=idx, horizontal=True, label_visibility="collapsed",
+        key="nav_radio",
+    )
+    st.session_state["page"] = choice
+    st.markdown('<div class="nav-rule"></div>', unsafe_allow_html=True)
+    return choice
+
+
+def legend():
+    st.markdown('<div class="st-lab">The six emotions</div>', unsafe_allow_html=True)
+    cards = "".join(
+        '<div class="lg">%s<div>%s</div></div>' % (face(e, THEME[e]["accent"]), THEME[e]["label"])
+        for e in ORDER
+    )
+    st.markdown('<div class="legend">%s</div>' % cards, unsafe_allow_html=True)
+
+
+def render_result(pairs, cleaned, infl=None):
+    top_e, top_p = pairs[0]
+    t = THEME[top_e]
+    sure = "very sure" if top_p > 0.7 else "fairly sure" if top_p > 0.45 else "leaning this way"
+
     st.markdown(
         """
-        <div class="eb">SAIA 2163 · Emotion Analyzer</div>
-        <h1 class="eh es">Read the <span class="em">%s</span><br>behind the words.</h1>
-        <p class="el">Type a message the way you would post it. The analyzer reads the emotion
-        underneath — and the page takes on its colour. Trained on 18,000 real messages with
-        Logistic Regression + TF-IDF.</p>
-        """ % word,
+        <div class="verdict">
+          <div class="face">%s</div>
+          <div>
+            <div class="emo es">%s</div>
+            <div class="conf">%.1f%%  ·  the message reads as %s</div>
+          </div>
+        </div>
+        """ % (face(top_e, t["accent"]), t["label"], top_p * 100, sure),
+        unsafe_allow_html=True,
+    )
+
+    segs = "".join(
+        '<span style="width:%.1f%%;background:%s;"></span>' % (p * 100, THEME[e]["accent"])
+        for e, p in pairs
+    )
+    st.markdown('<div class="spectrum">%s</div>' % segs, unsafe_allow_html=True)
+
+    rows = "".join(
+        '<div class="bar"><div class="nm">%s</div>'
+        '<div class="tr"><div class="fl" style="width:%.1f%%;background:%s"></div></div>'
+        '<div class="pt">%d%%</div></div>'
+        % (THEME[e]["label"], p * 100, THEME[e]["accent"], round(p * 100))
+        for e, p in pairs
+    )
+    st.markdown('<div class="bars">%s</div>' % rows, unsafe_allow_html=True)
+
+    if infl:
+        st.markdown('<div class="st-lab">Words that influenced this</div>', unsafe_allow_html=True)
+        chips = "".join('<span class="chip"><b>%s</b></span>' % w for w, _ in infl)
+        st.markdown('<div class="chips">%s</div>' % chips, unsafe_allow_html=True)
+
+    if cleaned:
+        st.caption("Model input after preprocessing →  %s" % cleaned)
+
+
+# --------------------------------------------------------------------------- #
+# PAGE: Home / About                                                          #
+# --------------------------------------------------------------------------- #
+def page_home(active, app_m):
+    word = "feeling" if active == "neutral" else THEME[active]["label"].lower()
+
+    # --- Hero: title + description sit ON the watercolor banner (one compact block).
+    # This combines the project title, description and problem statement, and saves
+    # vertical space so the whole Home page fits without scrolling.
+    hero = img_uri("hero.jpg") or img_uri("hero.png")
+    hero_bg = "background-image:url(%s);" % hero if hero else ""
+    st.markdown(
+        """
+        <div class="home-hero %(cls)s" style="%(bg)s">
+          <div class="home-hero-in">
+            <div class="eb">SAIA 2163 · Theme 5 · Emotion Analyzer</div>
+            <h1 class="eh es">Read the <span class="em">%(word)s</span> behind the words.</h1>
+            <p class="el">An NLP app that reads a social-media message and predicts the emotion
+            underneath — joy, sadness, love, anger, fear, or surprise — with live confidence
+            scores. Feeling is hard to measure at scale; a Logistic Regression + TF-IDF model
+            trained on 18,000 real messages does it instantly.</p>
+          </div>
+        </div>
+        """ % {"cls": "has-bg" if hero else "", "bg": hero_bg, "word": word},
+        unsafe_allow_html=True,
+    )
+
+    facts(app_m)
+
+    # How to use — compact single line.
+    st.markdown(
+        '<p class="howto"><b>How to use</b> &nbsp;·&nbsp; '
+        '<b>1</b> Pick or type a message on <b>Analyze</b> &nbsp;→&nbsp; '
+        '<b>2</b> read the emotion, confidence &amp; influential words &nbsp;→&nbsp; '
+        '<b>3</b> explore <b>Data Insights</b> &amp; <b>Model Performance</b> &nbsp;→&nbsp; '
+        '<b>4</b> try <b>Malay (BM)</b> translation.</p>',
+        unsafe_allow_html=True,
+    )
+
+    # Emotion faces — slim decorative strip (transparent line-art), replaces the
+    # bulkier SVG legend while still signalling the emotion theme.
+    faces = img_uri("faces.png")
+    if faces:
+        st.markdown('<img class="faces-strip" src="%s" alt="emotion faces"/>' % faces,
+                    unsafe_allow_html=True)
+    else:
+        legend()
+
+    st.markdown('<div class="st-lab home-team-lab">Team</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="team-line">'
+        '<b>Member 1</b> · Data &amp; preprocessing&nbsp;&nbsp;•&nbsp;&nbsp;'
+        '<b>Member 2</b> · Modelling &amp; evaluation&nbsp;&nbsp;•&nbsp;&nbsp;'
+        '<b>Member 3</b> · Streamlit app &amp; UI&nbsp;&nbsp;•&nbsp;&nbsp;'
+        '<b>Member 4</b> · Report &amp; visualizations'
+        '</p>',
         unsafe_allow_html=True,
     )
 
 
-def analyzer(model, tfidf):
+def facts(app_m):
+    st.markdown('<div class="st-lab">Under the hood</div>', unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="facts">
+          <div class="fct"><div class="v">%.0f%%</div><div class="k">Test accuracy</div></div>
+          <div class="fct"><div class="v">18K</div><div class="k">Training messages</div></div>
+          <div class="fct"><div class="v">6</div><div class="k">Emotions</div></div>
+          <div class="fct"><div class="v">TF-IDF</div><div class="k">+ Logistic Reg.</div></div>
+        </div>
+        """ % (app_m["accuracy"] * 100,),
+        unsafe_allow_html=True,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# PAGE: Analyze                                                               #
+# --------------------------------------------------------------------------- #
+def page_analyze(model, tfidf):
+    # Optional speech-bubble line art — shows only if assets/speech.png exists.
+    speech = img_uri("speech.png") or img_uri("speech.jpg")
+    if speech:
+        st.markdown(
+            '<img class="speech-img" src="%s" alt="speech bubble"/>' % speech,
+            unsafe_allow_html=True,
+        )
+
     st.markdown('<div class="st-lab">Try it live</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="st-sub">The model reads the feeling, not just the words. '
@@ -293,107 +558,46 @@ def analyzer(model, tfidf):
 
     if go_btn:
         if text.strip():
-            pairs, cleaned = predict(text, model, tfidf)
+            pairs, cleaned, X = predict(text, model, tfidf)
+            infl = influential_words(pairs[0][0], model, tfidf, X)
             st.session_state["active"] = pairs[0][0]
-            st.session_state["result"] = {"pairs": pairs, "cleaned": cleaned}
-            # rerun so the whole page re-themes to the detected emotion; the
-            # result is rendered below from session_state, so it persists.
+            st.session_state["result"] = {
+                "pairs": pairs, "cleaned": cleaned, "infl": infl,
+            }
             st.rerun()
         else:
             st.warning("Type a message first, then analyze.")
 
-    # Render the most recent result (survives the re-theme rerun).
     res = st.session_state.get("result")
     if res:
-        render_result(res["pairs"], res["cleaned"])
+        render_result(res["pairs"], res["cleaned"], res.get("infl"))
 
 
-def render_result(pairs, cleaned):
-    top_e, top_p = pairs[0]
-    t = THEME[top_e]
-    sure = "very sure" if top_p > 0.7 else "fairly sure" if top_p > 0.45 else "leaning this way"
-
-    # verdict + face
-    st.markdown(
-        """
-        <div class="verdict">
-          <div class="face">%s</div>
-          <div>
-            <div class="emo es">%s</div>
-            <div class="conf">%.1f%%  ·  the message reads as %s</div>
-          </div>
-        </div>
-        """ % (face(top_e, t["accent"]), t["label"], top_p * 100, sure),
-        unsafe_allow_html=True,
-    )
-
-    # spectrum
-    segs = "".join(
-        '<span style="width:%.1f%%;background:%s;"></span>' % (p * 100, THEME[e]["accent"])
-        for e, p in pairs
-    )
-    st.markdown('<div class="spectrum">%s</div>' % segs, unsafe_allow_html=True)
-
-    # probability bars
-    rows = "".join(
-        '<div class="bar"><div class="nm">%s</div>'
-        '<div class="tr"><div class="fl" style="width:%.1f%%;background:%s"></div></div>'
-        '<div class="pt">%d%%</div></div>'
-        % (THEME[e]["label"], p * 100, THEME[e]["accent"], round(p * 100))
-        for e, p in pairs
-    )
-    st.markdown('<div class="bars">%s</div>' % rows, unsafe_allow_html=True)
-
-    if cleaned:
-        st.caption("Model input after preprocessing →  %s" % cleaned)
-
-
-def legend():
-    st.markdown('<div class="st-lab">The six emotions</div>', unsafe_allow_html=True)
-    cards = "".join(
-        '<div class="lg">%s<div>%s</div></div>' % (face(e, THEME[e]["accent"]), THEME[e]["label"])
-        for e in ORDER
-    )
-    st.markdown('<div class="legend">%s</div>' % cards, unsafe_allow_html=True)
-
-
-def facts(app_m):
-    st.markdown('<div class="st-lab">Under the hood</div>', unsafe_allow_html=True)
-    st.markdown(
-        """
-        <div class="facts">
-          <div class="fct"><div class="v">%.0f%%</div><div class="k">Test accuracy</div></div>
-          <div class="fct"><div class="v">18K</div><div class="k">Training messages</div></div>
-          <div class="fct"><div class="v">6</div><div class="k">Emotions</div></div>
-          <div class="fct"><div class="v">TF-IDF</div><div class="k">+ Logistic Reg.</div></div>
-        </div>
-        """ % (app_m["accuracy"] * 100,),
-        unsafe_allow_html=True,
-    )
-
-
-def _light_layout(fig, height):
-    fig.update_layout(
-        height=height,
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#1a1a1a", family="Futura, Century Gothic, sans-serif", size=12),
-        xaxis=dict(tickfont=dict(color="#1a1a1a", size=11)),
-        yaxis=dict(tickfont=dict(color="#1a1a1a", size=11)),
-        margin=dict(t=20, b=10),
-    )
-    return fig
-
-
-def insights(df):
+# --------------------------------------------------------------------------- #
+# PAGE: Data Insights                                                         #
+# --------------------------------------------------------------------------- #
+def page_insights(df):
     st.markdown('<div class="st-lab">Inside the data</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="st-sub">What 18,000 labelled messages look like before any model sees them.</div>',
         unsafe_allow_html=True,
     )
 
-    t1, t2, t3 = st.tabs(["Emotion mix", "Message length", "Word clouds"])
+    t1, t2, t3, t4, t5 = st.tabs(
+        ["Sample data", "Emotion mix", "Message length", "Top words", "Word clouds"]
+    )
 
     with t1:
+        st.markdown('<div class="st-sub">A random peek at the labelled dataset.</div>',
+                    unsafe_allow_html=True)
+        sample = df.sample(8, random_state=7)[["text", "emotion"]].reset_index(drop=True)
+        st.dataframe(sample, use_container_width=True, hide_index=True)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Messages", f"{len(df):,}")
+        c2.metric("Emotions", df["emotion"].nunique())
+        c3.metric("Avg words", f"{df['text'].str.split().str.len().mean():.1f}")
+
+    with t2:
         counts = df["emotion"].value_counts().reindex(ORDER)
         fig = go.Figure(go.Bar(
             x=[THEME[e]["label"] for e in counts.index], y=counts.values,
@@ -402,10 +606,12 @@ def insights(df):
             textfont=dict(color="#1a1a1a", size=12),
         ))
         _light_layout(fig, 400)
-        fig.update_layout(xaxis=dict(showgrid=False, tickfont=dict(color="#1a1a1a")), yaxis=dict(showgrid=False, visible=False))
+        fig.update_layout(xaxis=dict(showgrid=False, tickfont=dict(color="#1a1a1a")),
+                          yaxis=dict(showgrid=False, visible=False))
         st.plotly_chart(fig, use_container_width=True)
+        st.caption("The dataset is imbalanced — joy and sadness dominate, surprise is rarest.")
 
-    with t2:
+    with t3:
         d = df.copy()
         d["wlen"] = d["text"].str.split().str.len()
         fig = go.Figure()
@@ -416,14 +622,34 @@ def insights(df):
             ))
         _light_layout(fig, 430)
         fig.update_layout(
-            yaxis=dict(title=dict(text="Words per message", font=dict(color="#1a1a1a", size=13)), range=[0, 60], gridcolor="rgba(0,0,0,0.06)"),
+            yaxis=dict(title=dict(text="Words per message", font=dict(color="#1a1a1a", size=13)),
+                       range=[0, 60], gridcolor="rgba(0,0,0,0.06)"),
             showlegend=False,
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    with t3:
+    with t4:
         pick = st.selectbox(
-            "Emotion", ORDER, format_func=lambda e: THEME[e]["label"],
+            "Emotion ", ORDER, format_func=lambda e: THEME[e]["label"], key="topwords_pick",
+        )
+        sub = df[df.emotion == pick]["text"].apply(clean_text)
+        words = " ".join(sub).split()
+        top = pd.Series(words).value_counts().head(20)[::-1]
+        fig = go.Figure(go.Bar(
+            x=top.values, y=top.index, orientation="h",
+            marker=dict(color=THEME[pick]["accent"]),
+        ))
+        _light_layout(fig, 480)
+        fig.update_layout(
+            xaxis=dict(title=dict(text="Count", font=dict(color="#1a1a1a")), gridcolor="rgba(0,0,0,0.06)"),
+            margin=dict(t=20, b=10, l=10),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption("Top 20 most frequent words for the selected emotion (after preprocessing).")
+
+    with t5:
+        pick = st.selectbox(
+            "Emotion", ORDER, format_func=lambda e: THEME[e]["label"], key="wc_pick",
         )
         sub = df[df.emotion == pick]["text"].apply(clean_text)
         wc = WordCloud(
@@ -435,7 +661,10 @@ def insights(df):
         st.image(buf.getvalue(), use_container_width=True)
 
 
-def performance(results, cm, app_m):
+# --------------------------------------------------------------------------- #
+# PAGE: Model Performance                                                     #
+# --------------------------------------------------------------------------- #
+def page_performance(results, cm, app_m):
     st.markdown('<div class="st-lab">How well it works</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="st-sub">Measured on 2,000 held-out messages the model never saw during training.</div>',
@@ -450,12 +679,13 @@ def performance(results, cm, app_m):
           <div class="fct"><div class="v">%.1f%%</div><div class="k">Precision</div></div>
           <div class="fct"><div class="v">%.1f%%</div><div class="k">Recall</div></div>
         </div>
-        """ % (app_m["accuracy"] * 100, app_m["f1"] * 100, app_m["precision"] * 100, app_m["recall"] * 100),
+        """ % (app_m["accuracy"] * 100, app_m["f1"] * 100,
+               app_m["precision"] * 100, app_m["recall"] * 100),
         unsafe_allow_html=True,
     )
     st.write("")
 
-    t1, t2 = st.tabs(["Model comparison", "Confusion matrix"])
+    t1, t2, t3 = st.tabs(["Model comparison", "Confusion matrix", "Model info"])
     with t1:
         labels = [f"{r['model']} · {r['feature']}" for r in results]
         fig = go.Figure()
@@ -494,6 +724,103 @@ def performance(results, cm, app_m):
             coloraxis_colorbar=dict(tickfont=dict(color="#1a1a1a")),
         )
         st.plotly_chart(fig, use_container_width=True)
+        st.caption("Rows are the true emotion, columns the prediction. A strong diagonal means good accuracy.")
+
+    with t3:
+        st.markdown(
+            '<p class="prose">The deployed model is <b>Logistic Regression</b> on <b>TF-IDF</b> features '
+            '(unigrams + bigrams, 8,000 features). It was chosen over Naive Bayes and Linear SVM because it '
+            'matches the top accuracy <i>and</i> gives calibrated probability outputs, which power the '
+            'confidence scores on the Analyze page.</p>',
+            unsafe_allow_html=True,
+        )
+        rows = "".join(
+            "<tr><td style='padding:8px 10px;border-bottom:1px solid var(--line)'>%s · %s</td>"
+            "<td style='padding:8px 10px;border-bottom:1px solid var(--line);text-align:right'>%.1f%%</td>"
+            "<td style='padding:8px 10px;border-bottom:1px solid var(--line);text-align:right'>%.2f</td></tr>"
+            % (r["model"], r["feature"], r["accuracy"] * 100, r["f1"]) for r in results
+        )
+        st.markdown(
+            "<table style='width:100%%;border-collapse:collapse;font-size:14px;color:var(--ink)'>"
+            "<tr><th style='text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)'>Model</th>"
+            "<th style='text-align:right;padding:8px 10px;border-bottom:1px solid var(--line)'>Accuracy</th>"
+            "<th style='text-align:right;padding:8px 10px;border-bottom:1px solid var(--line)'>F1</th></tr>"
+            "%s</table>" % rows,
+            unsafe_allow_html=True,
+        )
+
+
+# --------------------------------------------------------------------------- #
+# PAGE: Malay (multi-language support)                                        #
+# --------------------------------------------------------------------------- #
+@st.cache_data(show_spinner=False)
+def translate_ms_to_en(text):
+    """Translate Malay → English. Returns (english_text, error_or_None)."""
+    try:
+        from deep_translator import GoogleTranslator
+        out = GoogleTranslator(source="ms", target="en").translate(text)
+        return out, None
+    except Exception as e:
+        return None, str(e)
+
+
+def page_malay(model, tfidf):
+    st.markdown('<div class="st-lab">Bahasa Melayu · multi-language</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="st-sub">Taip mesej dalam Bahasa Melayu. Aplikasi akan menterjemah ke Bahasa '
+        'Inggeris secara automatik, kemudian model mengesan emosinya.<br>'
+        '<i>Type a message in Malay — it is auto-translated to English, then the model reads the emotion.</i></div>',
+        unsafe_allow_html=True,
+    )
+
+    examples = {
+        "Pilih contoh… (pick example)": "",
+        "Gembira (joyful)": "saya rasa sangat gembira dan ceria hari ini semuanya indah",
+        "Sedih (sad)": "saya berasa sedih dan keseorangan malam ini",
+        "Marah (angry)": "saya sangat marah kerana mereka menipu saya lagi",
+        "Takut (afraid)": "saya rasa cemas dan takut tentang keputusan esok",
+        "Sayang (love)": "saya sangat bersyukur dan disayangi bersama keluarga saya",
+    }
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        pick = st.selectbox("Contoh", list(examples.keys()), label_visibility="collapsed")
+    default = examples[pick]
+
+    text = st.text_area(
+        "msg_ms", value=default, height=120, label_visibility="collapsed",
+        placeholder="cth. saya rasa hari ini sangat bermakna…",
+    )
+    go_btn = st.button("Analisis emosi  →")
+
+    if go_btn:
+        if not text.strip():
+            st.warning("Taip mesej dahulu. (Type a message first.)")
+        else:
+            with st.spinner("Menterjemah… (translating)"):
+                english, err = translate_ms_to_en(text)
+            if err or not english:
+                st.error(
+                    "Terjemahan gagal — periksa sambungan internet. "
+                    "(Translation failed — check your internet connection.)"
+                )
+                st.caption("Detail: %s" % (err or "no output"))
+            else:
+                st.markdown(
+                    '<p class="prose" style="margin:6px 0 2px"><b>Terjemahan / Translation:</b> '
+                    '<i>%s</i></p>' % english,
+                    unsafe_allow_html=True,
+                )
+                pairs, cleaned, X = predict(english, model, tfidf)
+                infl = influential_words(pairs[0][0], model, tfidf, X)
+                st.session_state["active"] = pairs[0][0]
+                render_result(pairs, cleaned, infl)
+
+    st.markdown(
+        '<p class="st-sub" style="margin-top:22px"><b>Limitation:</b> the model itself is trained only on '
+        'English. Malay support works by machine-translating the input first, so very local slang or '
+        'nuance may be softened in translation and can affect the predicted emotion.</p>',
+        unsafe_allow_html=True,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -507,23 +834,36 @@ def main():
     results, cm, app_m = load_results()
     df = load_dataset()
 
-    hero(active)
-    st.write("")
-    analyzer(model, tfidf)
-    legend()
-    facts(app_m)
-    st.write("")
-    insights(df)
-    st.write("")
-    performance(results, cm, app_m)
+    page = top_nav(active)
+
+    if page == "Home":
+        page_home(active, app_m)
+    elif page == "Analyze":
+        page_analyze(model, tfidf)
+    elif page == "Data Insights":
+        page_insights(df)
+    elif page == "Model Performance":
+        page_performance(results, cm, app_m)
+    elif page == "Malay (BM)":
+        page_malay(model, tfidf)
+
+    # Optional social icons — each shows only if its file exists in assets/.
+    social_files = [("ig.png", "Instagram"), ("x.png", "X"),
+                    ("fb.png", "Facebook"), ("threads.png", "Threads")]
+    icons = "".join(
+        '<img src="%s" alt="%s" title="%s"/>' % (img_uri(fn), name, name)
+        for fn, name in social_files if img_uri(fn)
+    )
+    socials_html = '<span class="socials">%s</span>' % icons if icons else \
+        '<span>SAIA 2163 · Theme 5 · Emotion Analyzer</span>'
 
     st.markdown(
         '<div class="foot"><span>Type a sentence with feeling and watch the colour shift</span>'
-        '<span>SAIA 2163 · Theme 5 · Emotion Analyzer</span></div>',
+        '%s</div>' % socials_html,
         unsafe_allow_html=True,
     )
 
 
 if __name__ == "__main__":
     main()
-# editorial paper UI — applied per requirement
+# editorial paper UI — multi-page top-nav + Malay support

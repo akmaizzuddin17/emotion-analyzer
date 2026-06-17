@@ -17,6 +17,11 @@ Thumbs.db
 # Reports (kept locally, excluded from the GitHub repo)
 reports/
 
+# Local backups / unused source assets (kept on disk, not in the repo)
+app_original_backup.py
+assets/*_original.png
+assets/home hero.png
+
 # Large model artifacts are kept (needed by the app), but ignore these if you
 # prefer to regenerate them with train_models.py:
 # models/*.pkl
