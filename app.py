@@ -9,11 +9,13 @@ instead of one long scroll, and detecting an emotion smoothly re-themes the
 whole page to that emotion's colour.
 
 Pages (mapped to the SAIA 2163 brief's required sections):
-  • Home / About      — project, problem, how-to-use, team, tech stack
-  • Analyze           — text input → prediction, confidence, influential words
+  • Home / About      — project, problem, how-to-use, team
   • Data Insights     — sample data, distribution, message length, word clouds, top words
   • Model Performance — metrics, model comparison, confusion matrix
-  • Malay (BM)        — multi-language support: translate Malay → English → classify
+
+Analysis lives in a sticky right-docked panel that opens on any page. The panel
+has an English / Bahasa Melayu toggle — Malay input is auto-translated to
+English first (multi-language support), then classified.
 
 Run:  streamlit run app.py
 """
@@ -39,7 +41,7 @@ from preprocess import clean_text, LABEL_MAP
 st.set_page_config(
     page_title="Emotion Analyzer · SAIA 2163",
     page_icon="🖋️",
-    layout="centered",
+    layout="wide",
     initial_sidebar_state="collapsed",
 )
 
@@ -81,7 +83,7 @@ THEME = {
 }
 
 # Pages shown in the top navigation.
-PAGES = ["Home", "Analyze", "Data Insights", "Model Performance", "Malay (BM)"]
+PAGES = ["Home", "Data Insights", "Model Performance"]
 
 
 def face(emotion: str, color: str) -> str:
@@ -155,7 +157,8 @@ def inject_css(active="neutral"):
           color:var(--ink);
           transition:background .8s ease;
         }
-        .block-container{padding-top:1.4rem; padding-bottom:4rem; max-width:780px;}
+        .block-container{padding-top:1.4rem; padding-bottom:4rem; margin:0 auto;
+          max-width:860px; transition:max-width .35s ease;}
         html, body, [class*="css"]{font-family:var(--body);}
 
         .es{font-family:'Fraunces','Palatino Linotype','Book Antiqua',Palatino,Georgia,serif;}
@@ -259,6 +262,21 @@ def inject_css(active="neutral"):
         /* ---------- optional speech-bubble art (assets/speech.png) ---------- */
         .speech-img{display:block;width:96px;height:auto;margin:0 0 6px;opacity:.85;}
 
+        /* ---------- right-docked analyzer panel ---------- */
+        /* the panel column = the last column of the block that holds .panel-anchor */
+        [data-testid="stHorizontalBlock"]:has(.panel-anchor) > [data-testid="column"]:last-child{
+          position:sticky; top:18px; align-self:flex-start;
+          background:var(--paper); border:1px solid var(--line); border-radius:18px;
+          padding:14px 16px 16px; box-shadow:0 14px 38px rgba(0,0,0,.10);
+        }
+        .panel-anchor{display:none;}
+        .panel-head{display:flex;align-items:center;justify-content:space-between;margin:2px 0 4px;}
+        .panel-title{font-family:'Fraunces',Georgia,serif;font-size:19px;color:var(--ink);font-weight:600;
+          display:flex;align-items:center;gap:8px;}
+        .panel-icon{width:24px;height:24px;mix-blend-mode:multiply;}
+        .panel-hint{color:var(--soft);font-size:12.5px;line-height:1.5;margin:0 0 8px;}
+        .panel-open-wrap{display:flex;justify-content:flex-end;margin:-6px 0 2px;}
+
         /* ---------- streamlit inputs, themed ---------- */
         .stTextArea textarea{
           background:#fff!important;color:var(--ink)!important;
@@ -278,9 +296,25 @@ def inject_css(active="neutral"):
         [data-baseweb="select"] span{color:var(--ink)!important;}
 
         /* sub-tabs */
-        .stTabs [data-baseweb="tab-list"]{gap:8px;border-bottom:1px solid var(--line);}
-        .stTabs [data-baseweb="tab"]{font-family:var(--body);font-weight:500;color:var(--soft);background:transparent;}
-        .stTabs [aria-selected="true"]{color:var(--ink)!important;}
+        .stTabs [data-baseweb="tab-list"]{gap:6px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+        .stTabs [data-baseweb="tab"]{font-family:var(--body);font-weight:500;color:var(--soft);
+          background:transparent;padding:7px 16px!important;margin:0 2px 2px 0!important;
+          border-radius:9px 9px 0 0;transition:color .25s ease,background .25s ease;}
+        .stTabs [data-baseweb="tab"]:hover{color:var(--ink);background:rgba(0,0,0,.035);}
+        .stTabs [aria-selected="true"]{color:var(--accent)!important;background:rgba(0,0,0,.04)!important;}
+        /* animated underline highlight under the active tab */
+        .stTabs [data-baseweb="tab-highlight"]{background:var(--accent)!important;height:3px!important;
+          border-radius:3px;transition:all .35s cubic-bezier(.22,1,.36,1)!important;}
+        /* fade + slide-up the panel contents whenever a tab changes */
+        .stTabs [data-baseweb="tab-panel"]{animation:fadeSlide .45s cubic-bezier(.22,1,.36,1);}
+
+        @keyframes fadeSlide{
+          from{opacity:0;transform:translateY(10px);}
+          to{opacity:1;transform:translateY(0);}
+        }
+        @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+        /* gentle page-level fade-in on every rerun / page switch */
+        .block-container{animation:fadeIn .5s ease;}
 
         .stDataFrame{border:1px solid var(--line)!important;border-radius:10px!important;}
 
@@ -474,10 +508,10 @@ def page_home(active, app_m):
     # How to use — compact single line.
     st.markdown(
         '<p class="howto"><b>How to use</b> &nbsp;·&nbsp; '
-        '<b>1</b> Pick or type a message on <b>Analyze</b> &nbsp;→&nbsp; '
-        '<b>2</b> read the emotion, confidence &amp; influential words &nbsp;→&nbsp; '
-        '<b>3</b> explore <b>Data Insights</b> &amp; <b>Model Performance</b> &nbsp;→&nbsp; '
-        '<b>4</b> try <b>Malay (BM)</b> translation.</p>',
+        '<b>1</b> Click <b>✎ Analyze text</b> (top-right) to open the panel &nbsp;→&nbsp; '
+        '<b>2</b> choose <b>English</b> or <b>Bahasa Melayu</b>, type a message &nbsp;→&nbsp; '
+        '<b>3</b> read the emotion, confidence &amp; influential words &nbsp;→&nbsp; '
+        '<b>4</b> explore <b>Data Insights</b> &amp; <b>Model Performance</b>.</p>',
         unsafe_allow_html=True,
     )
 
@@ -515,62 +549,6 @@ def facts(app_m):
         """ % (app_m["accuracy"] * 100,),
         unsafe_allow_html=True,
     )
-
-
-# --------------------------------------------------------------------------- #
-# PAGE: Analyze                                                               #
-# --------------------------------------------------------------------------- #
-def page_analyze(model, tfidf):
-    # Optional speech-bubble line art — shows only if assets/speech.png exists.
-    speech = img_uri("speech.png") or img_uri("speech.jpg")
-    if speech:
-        st.markdown(
-            '<img class="speech-img" src="%s" alt="speech bubble"/>' % speech,
-            unsafe_allow_html=True,
-        )
-
-    st.markdown('<div class="st-lab">Try it live</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="st-sub">The model reads the feeling, not just the words. '
-        'Pick an example or write your own.</div>',
-        unsafe_allow_html=True,
-    )
-
-    examples = {
-        "Pick an example…": "",
-        "Joyful": "i feel so happy and cheerful today everything is wonderful",
-        "Heartfelt": "i feel so grateful and loved being around my family",
-        "Anxious": "i feel so nervous and scared about the results tomorrow",
-        "Angry": "i am so furious that they lied to me again",
-        "Surprised": "i can't believe this just happened it caught me totally off guard",
-    }
-
-    c1, c2 = st.columns([1, 2])
-    with c1:
-        pick = st.selectbox("Quick examples", list(examples.keys()), label_visibility="collapsed")
-    default = examples[pick]
-
-    text = st.text_area(
-        "msg", value=default, height=120, label_visibility="collapsed",
-        placeholder="e.g. i feel like everything is finally falling into place…",
-    )
-    go_btn = st.button("Analyze emotion  →")
-
-    if go_btn:
-        if text.strip():
-            pairs, cleaned, X = predict(text, model, tfidf)
-            infl = influential_words(pairs[0][0], model, tfidf, X)
-            st.session_state["active"] = pairs[0][0]
-            st.session_state["result"] = {
-                "pairs": pairs, "cleaned": cleaned, "infl": infl,
-            }
-            st.rerun()
-        else:
-            st.warning("Type a message first, then analyze.")
-
-    res = st.session_state.get("result")
-    if res:
-        render_result(res["pairs"], res["cleaned"], res.get("infl"))
 
 
 # --------------------------------------------------------------------------- #
@@ -754,98 +732,135 @@ def page_performance(results, cm, app_m):
 # PAGE: Malay (multi-language support)                                        #
 # --------------------------------------------------------------------------- #
 @st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False)
 def translate_ms_to_en(text):
-    """Translate Malay → English. Returns (english_text, error_or_None)."""
+    """Translate Malay → English. Returns (english_text, error_or_None).
+
+    Tries Google Translate first, then falls back to MyMemory if Google is
+    blocked or rate-limited, so a single flaky request doesn't break the page.
+    Results are cached so re-runs of the same text don't re-hit the network.
+    """
+    errors = []
     try:
         from deep_translator import GoogleTranslator
         out = GoogleTranslator(source="ms", target="en").translate(text)
-        return out, None
+        if out and out.strip():
+            return out, None
     except Exception as e:
-        return None, str(e)
+        errors.append("Google: %s" % e)
+
+    try:
+        from deep_translator import MyMemoryTranslator
+        out = MyMemoryTranslator(source="ms-MY", target="en-US").translate(text)
+        if out and out.strip():
+            return out, None
+    except Exception as e:
+        errors.append("MyMemory: %s" % e)
+
+    return None, " | ".join(errors) if errors else "no translation returned"
 
 
-def page_malay(model, tfidf):
-    st.markdown('<div class="st-lab">Bahasa Melayu · multi-language</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="st-sub">Taip mesej dalam Bahasa Melayu. Aplikasi akan menterjemah ke Bahasa '
-        'Inggeris secara automatik, kemudian model mengesan emosinya.<br>'
-        '<i>Type a message in Malay — it is auto-translated to English, then the model reads the emotion.</i></div>',
-        unsafe_allow_html=True,
+# --------------------------------------------------------------------------- #
+# Right-docked analyzer panel                                                 #
+# --------------------------------------------------------------------------- #
+def analyzer_panel(model, tfidf):
+    """The sticky right-docked text analyzer (shown when the panel is open)."""
+    # Marker that scopes the sticky/card CSS to THIS column only.
+    st.markdown('<span class="panel-anchor"></span>', unsafe_allow_html=True)
+
+    head_l, head_r = st.columns([5, 1])
+    with head_l:
+        speech = img_uri("speech.png") or img_uri("speech.jpg")
+        icon = '<img class="panel-icon" src="%s" alt=""/>' % speech if speech else "✎ "
+        st.markdown('<div class="panel-title">%sAnalyze</div>' % icon, unsafe_allow_html=True)
+    with head_r:
+        if st.button("✕", key="close_panel", help="Close panel"):
+            st.session_state["panel_open"] = False
+            st.rerun()
+
+    # Language toggle at the top — English (default) or Bahasa Melayu.
+    lang = st.radio(
+        "lang", ["English", "Bahasa Melayu"], horizontal=True,
+        label_visibility="collapsed", key="panel_lang",
     )
+    is_my = lang.startswith("Bahasa")
 
-    examples = {
-        "Pilih contoh… (pick example)": "",
-        "Gembira (joyful)": "saya rasa sangat gembira dan ceria hari ini semuanya indah",
-        "Sedih (sad)": "saya berasa sedih dan keseorangan malam ini",
-        "Marah (angry)": "saya sangat marah kerana mereka menipu saya lagi",
-        "Takut (afraid)": "saya rasa cemas dan takut tentang keputusan esok",
-        "Sayang (love)": "saya sangat bersyukur dan disayangi bersama keluarga saya",
-    }
-    c1, c2 = st.columns([1, 2])
-    with c1:
-        pick = st.selectbox("Contoh", list(examples.keys()), label_visibility="collapsed")
-    default = examples[pick]
+    if is_my:
+        st.markdown('<p class="panel-hint">Taip mesej dalam Bahasa Melayu — ia diterjemah ke '
+                    'Bahasa Inggeris dahulu, kemudian emosinya dianalisis.</p>',
+                    unsafe_allow_html=True)
+        examples = {
+            "Pilih contoh…": "",
+            "Gembira": "saya rasa sangat gembira dan bersyukur hari ini",
+            "Sedih": "saya rasa sedih dan keseorangan sejak kebelakangan ini",
+            "Takut": "saya rasa cemas dan takut tentang keputusan esok",
+            "Marah": "saya sangat marah kerana mereka menipu saya lagi",
+            "Sayang": "saya sangat menyayangi keluarga saya",
+        }
+        placeholder = "cth. saya rasa hari ini sangat bermakna…"
+        btn_label, ex_label, ta_label = "Analisis emosi  →", "contoh_my", "panel_msg_my"
+    else:
+        st.markdown('<p class="panel-hint">Type any message — the model reads the emotion '
+                    'underneath and the page takes on its colour.</p>', unsafe_allow_html=True)
+        examples = {
+            "Pick an example…": "",
+            "Joyful": "i feel so happy and cheerful today everything is wonderful",
+            "Heartfelt": "i feel so grateful and loved being around my family",
+            "Anxious": "i feel so nervous and scared about the results tomorrow",
+            "Angry": "i am so furious that they lied to me again",
+            "Surprised": "i can't believe this just happened it caught me totally off guard",
+        }
+        placeholder = "e.g. i feel like everything is finally falling into place…"
+        btn_label, ex_label, ta_label = "Analyze emotion  →", "examples_en", "panel_msg_en"
 
+    pick = st.selectbox(ex_label, list(examples.keys()), label_visibility="collapsed")
     text = st.text_area(
-        "msg_ms", value=default, height=120, label_visibility="collapsed",
-        placeholder="cth. saya rasa hari ini sangat bermakna…",
+        ta_label, value=examples[pick], height=120, label_visibility="collapsed",
+        placeholder=placeholder,
     )
-    go_btn = st.button("Analisis emosi  →")
 
-    if go_btn:
+    if st.button(btn_label, key="panel_go", use_container_width=True):
         if not text.strip():
-            st.warning("Taip mesej dahulu. (Type a message first.)")
+            st.warning("Taip mesej dahulu. (Type a message first.)" if is_my
+                       else "Type a message first, then analyze.")
         else:
-            with st.spinner("Menterjemah… (translating)"):
-                english, err = translate_ms_to_en(text)
-            if err or not english:
-                st.error(
-                    "Terjemahan gagal — periksa sambungan internet. "
-                    "(Translation failed — check your internet connection.)"
-                )
-                st.caption("Detail: %s" % (err or "no output"))
-            else:
-                st.markdown(
-                    '<p class="prose" style="margin:6px 0 2px"><b>Terjemahan / Translation:</b> '
-                    '<i>%s</i></p>' % english,
-                    unsafe_allow_html=True,
-                )
-                pairs, cleaned, X = predict(english, model, tfidf)
+            ok, translation, model_input = True, None, text
+            if is_my:
+                with st.spinner("Menterjemah… (translating)"):
+                    english, err = translate_ms_to_en(text)
+                if err or not english:
+                    st.error("Terjemahan gagal. Sila cuba lagi sebentar. "
+                             "(Translation failed — please try again.)")
+                    ok = False
+                else:
+                    translation, model_input = english, english
+            if ok:
+                pairs, cleaned, X = predict(model_input, model, tfidf)
                 infl = influential_words(pairs[0][0], model, tfidf, X)
                 st.session_state["active"] = pairs[0][0]
-                render_result(pairs, cleaned, infl)
+                st.session_state["result"] = {
+                    "pairs": pairs, "cleaned": cleaned, "infl": infl,
+                    "translation": translation,
+                }
+                st.rerun()
 
-    st.markdown(
-        '<p class="st-sub" style="margin-top:22px"><b>Limitation:</b> the model itself is trained only on '
-        'English. Malay support works by machine-translating the input first, so very local slang or '
-        'nuance may be softened in translation and can affect the predicted emotion.</p>',
-        unsafe_allow_html=True,
-    )
+    res = st.session_state.get("result")
+    if res:
+        if res.get("translation"):
+            st.markdown(
+                '<p class="panel-hint" style="margin-top:8px"><b>Translation:</b> %s</p>'
+                % res["translation"], unsafe_allow_html=True)
+        render_result(res["pairs"], res["cleaned"], res.get("infl"))
 
 
-# --------------------------------------------------------------------------- #
-# Main                                                                        #
-# --------------------------------------------------------------------------- #
-def main():
-    active = st.session_state.get("active", "neutral")
-    inject_css(active)
-
-    model, tfidf = load_model()
-    results, cm, app_m = load_results()
-    df = load_dataset()
-
-    page = top_nav(active)
-
+def render_page(page, active, app_m, df, results, cm, model, tfidf):
+    """Render whichever page is selected (used inside the left/body column)."""
     if page == "Home":
         page_home(active, app_m)
-    elif page == "Analyze":
-        page_analyze(model, tfidf)
     elif page == "Data Insights":
         page_insights(df)
     elif page == "Model Performance":
         page_performance(results, cm, app_m)
-    elif page == "Malay (BM)":
-        page_malay(model, tfidf)
 
     # Optional social icons — each shows only if its file exists in assets/.
     social_files = [("ig.png", "Instagram"), ("x.png", "X"),
@@ -856,12 +871,50 @@ def main():
     )
     socials_html = '<span class="socials">%s</span>' % icons if icons else \
         '<span>SAIA 2163 · Theme 5 · Emotion Analyzer</span>'
-
     st.markdown(
         '<div class="foot"><span>Type a sentence with feeling and watch the colour shift</span>'
         '%s</div>' % socials_html,
         unsafe_allow_html=True,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Main                                                                        #
+# --------------------------------------------------------------------------- #
+def main():
+    active = st.session_state.get("active", "neutral")
+    panel_open = st.session_state.get("panel_open", False)
+
+    inject_css(active)
+    # Widen the page when the dock is open so content shifts left + panel fits.
+    st.markdown(
+        "<style>.block-container{max-width:%s;}</style>"
+        % ("1320px" if panel_open else "860px"),
+        unsafe_allow_html=True,
+    )
+
+    model, tfidf = load_model()
+    results, cm, app_m = load_results()
+    df = load_dataset()
+
+    if panel_open:
+        body, panel = st.columns([2.3, 1], gap="large")
+        with body:
+            page = top_nav(active)
+            render_page(page, active, app_m, df, results, cm, model, tfidf)
+        with panel:
+            analyzer_panel(model, tfidf)
+    else:
+        page = top_nav(active)
+        # "Open analyzer" toggle, right-aligned just under the nav.
+        st.markdown('<div class="panel-open-wrap">', unsafe_allow_html=True)
+        oc1, oc2 = st.columns([7, 2])
+        with oc2:
+            if st.button("✎  Analyze text", key="open_panel", use_container_width=True):
+                st.session_state["panel_open"] = True
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+        render_page(page, active, app_m, df, results, cm, model, tfidf)
 
 
 if __name__ == "__main__":
