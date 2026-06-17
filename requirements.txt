@@ -1,11 +1,20 @@
+# --- Streamlit app (deployment) dependencies ---
+# These are everything app.py needs to run on Streamlit Community Cloud.
 streamlit>=1.30
-scikit-learn>=1.3
-gensim>=4.3
-nltk>=3.8
+scikit-learn==1.8.0      # pinned so the saved model/vectorizer pickles load correctly
+numpy==2.4.4             # pinned to match the version the model was trained with
+scipy>=1.11
+joblib>=1.3
 pandas>=2.0
-numpy>=1.24
-matplotlib>=3.7
-seaborn>=0.12
+nltk>=3.8
 plotly>=5.18
 wordcloud>=1.9
-joblib>=1.3
+
+# --- Local-only: visualization script (make_visuals.py) ---
+matplotlib>=3.7
+seaborn>=0.12
+
+# --- Local-only: training the Word2Vec baseline (train_models.py / notebook) ---
+# gensim is NOT used by the deployed app and fails to build on some cloud
+# Python versions, so it is intentionally left out of the install list above.
+# To retrain locally, install it separately:  pip install "gensim>=4.3"
