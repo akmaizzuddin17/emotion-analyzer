@@ -872,7 +872,7 @@ def render_page(page, active, app_m, df, results, cm, model, tfidf):
     socials_html = '<span class="socials">%s</span>' % icons if icons else \
         '<span>SAIA 2163 · Theme 5 · Emotion Analyzer</span>'
     st.markdown(
-        '<div class="foot"><span>Type a sentence with feeling and watch the colour shift</span>'
+        '<div class="foot"><span></span>'
         '%s</div>' % socials_html,
         unsafe_allow_html=True,
     )
