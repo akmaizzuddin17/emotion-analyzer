@@ -494,7 +494,7 @@ def page_home(active, app_m):
             <div class="eb">SAIA 2163 · Theme 5 · Emotion Analyzer</div>
             <h1 class="eh es">Read the <span class="em">%(word)s</span> behind the words.</h1>
             <p class="el">An NLP app that reads a social-media message and predicts the emotion
-            underneath — joy, sadness, love, anger, fear, or surprise — with live confidence
+            underneath joy, sadness, love, anger, fear, or surprise with live confidence
             scores. Feeling is hard to measure at scale; a Logistic Regression + TF-IDF model
             trained on 18,000 real messages does it instantly.</p>
           </div>
